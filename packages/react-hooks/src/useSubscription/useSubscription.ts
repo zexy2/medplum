@@ -3,8 +3,9 @@
 import type { SubscriptionEmitter, SubscriptionEventMap } from '@medplum/core';
 import { deepEquals } from '@medplum/core';
 import type { Bundle, Subscription } from '@medplum/fhirtypes';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMedplum, useMedplumProfile } from '../MedplumProvider/MedplumProvider.context';
+import { useStabilizedCallback } from '../useStabilizedCallback/useStabilizedCallback';
 
 const SUBSCRIPTION_DEBOUNCE_MS = 3000;
 
@@ -65,24 +66,6 @@ export function useSubscription(
   const prevCriteriaRef = useRef<string | undefined>(undefined);
   const prevMemoizedSubPropsRef = useRef<UseSubscriptionOptions['subscriptionProps']>(undefined);
 
-  const callbackRef = useRef(callback);
-  callbackRef.current = callback;
-
-  const onWebSocketOpenRef = useRef(options?.onWebSocketOpen);
-  onWebSocketOpenRef.current = options?.onWebSocketOpen;
-
-  const onWebSocketCloseRef = useRef(options?.onWebSocketClose);
-  onWebSocketCloseRef.current = options?.onWebSocketClose;
-
-  const onSubscriptionConnectRef = useRef(options?.onSubscriptionConnect);
-  onSubscriptionConnectRef.current = options?.onSubscriptionConnect;
-
-  const onSubscriptionDisconnectRef = useRef(options?.onSubscriptionDisconnect);
-  onSubscriptionDisconnectRef.current = options?.onSubscriptionDisconnect;
-
-  const onErrorRef = useRef(options?.onError);
-  onErrorRef.current = options?.onError;
-
   useEffect(() => {
     // Deep equals checks referential equality first
     if (!deepEquals(options?.subscriptionProps, memoizedSubProps)) {
@@ -128,29 +111,19 @@ export function useSubscription(
     };
   }, [medplum, effectiveCriteria, memoizedSubProps]);
 
-  const emitterCallback = useCallback((event: SubscriptionEventMap['message']) => {
-    callbackRef.current?.(event.payload);
-  }, []);
+  const emitterCallback = useStabilizedCallback((event: SubscriptionEventMap['message']) => callback?.(event.payload));
+  const onWebSocketOpen = useStabilizedCallback(() => options?.onWebSocketOpen?.());
+  const onWebSocketClose = useStabilizedCallback(() => options?.onWebSocketClose?.());
 
-  const onWebSocketOpen = useCallback(() => {
-    onWebSocketOpenRef.current?.();
-  }, []);
+  const onSubscriptionConnect = useStabilizedCallback((event: SubscriptionEventMap['connect']) =>
+    options?.onSubscriptionConnect?.(event.payload.subscriptionId)
+  );
 
-  const onWebSocketClose = useCallback(() => {
-    onWebSocketCloseRef.current?.();
-  }, []);
+  const onSubscriptionDisconnect = useStabilizedCallback((event: SubscriptionEventMap['disconnect']) =>
+    options?.onSubscriptionDisconnect?.(event.payload.subscriptionId)
+  );
 
-  const onSubscriptionConnect = useCallback((event: SubscriptionEventMap['connect']) => {
-    onSubscriptionConnectRef.current?.(event.payload.subscriptionId);
-  }, []);
-
-  const onSubscriptionDisconnect = useCallback((event: SubscriptionEventMap['disconnect']) => {
-    onSubscriptionDisconnectRef.current?.(event.payload.subscriptionId);
-  }, []);
-
-  const onError = useCallback((event: SubscriptionEventMap['error']) => {
-    onErrorRef.current?.(event.payload);
-  }, []);
+  const onError = useStabilizedCallback((event: SubscriptionEventMap['error']) => options?.onError?.(event.payload));
 
   useEffect(() => {
     if (!emitter) {
